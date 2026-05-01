@@ -1,3 +1,5 @@
+SRC = $(wildcard *.c)
+
 watch-run:
 	ls *.c | entr -r sh -c 'clear && make run'
 
@@ -8,7 +10,7 @@ run: build
 	./out
 
 build: $(wildcard *.c)
-	gcc -o out main.c
+	gcc -o out $(SRC)
 
 clean:
 	rm out
