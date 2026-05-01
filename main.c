@@ -6,11 +6,18 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#include <termios.h>
+#include <unistd.h>
 
 #define BUF_SIZE 10000
+#define WORD_SIZE 100
 
-char *ANSI_RESET = "\033[0m";
-char *ANSI_BG_GREEN = "\033[42m";
+#define ANSI_RESET "\033[0m"
+#define ANSI_FG_GREEN "\033[32m"
+#define ANSI_FG_RED "\033[31m"
+#define ANSI_CLEAR "\033[2J"
+#define ANSI_MOVE_RC(R, C) "\033[" #R ";" #C "H"
+#define ANSI_MOVE_LEFT(C) "\033[" #C "D"
 
 int run_time = 30;
 int run_words = 10;
@@ -18,11 +25,27 @@ int repeat = 0;
 char *dictionary_filename = "dictionary";
 
 FILE *f;
-char words[BUF_SIZE][100];
+char words[BUF_SIZE][WORD_SIZE];
 int words_c = 0;
+
+struct termios orig_term;
+void disable_raw_mode() {
+  tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_term);
+}
+
+void enable_raw_mode() {
+  tcgetattr(STDIN_FILENO, &orig_term);
+  atexit(disable_raw_mode);
+
+  struct termios raw = orig_term;
+  raw.c_lflag &= ~(ICANON | ECHO);
+
+  tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+}
 
 void handle_signal (int sig) {
   if (f) fclose(f);
+  disable_raw_mode();
   exit(EXIT_FAILURE);
 }
 
@@ -80,12 +103,13 @@ void pick (char *res) {
 }
 
 void read_words () {
-  char word[100];
+  char word[WORD_SIZE];
 
   while (fscanf(f, "%99s", word) == 1 && words_c < BUF_SIZE) {
     strcpy(words[words_c++], word);
   };
 }
+
 
 int main(int argc, char **argv) {
   config(argc, argv);
@@ -106,13 +130,63 @@ int main(int argc, char **argv) {
 
   read_words();
 
-  char *picked_word;
+  char picked_word[WORD_SIZE];
   for (int i = 0; i < run_words; i++) {
     pick(picked_word);
     strcat(str, picked_word);
   }
 
-  printf("%s\n", str);
+  int run_len = strlen(str) - 1;
+  str[run_len] = '\0';
 
   fclose(f);
+
+  enable_raw_mode();
+
+  char buf[1024 + 500];
+  int len = snprintf(
+    buf,
+    sizeof(buf),
+    ANSI_CLEAR ANSI_MOVE_RC(0, 0) "%s" ANSI_MOVE_RC(0, 0),
+    str
+  );
+
+  write(STDOUT_FILENO, buf, len);
+
+  char c;
+  int pos = 0;
+  while (read(STDIN_FILENO, &c, 1) == 1) {
+    // write(STDOUT_FILENO, "a", 1);
+    if (c == 127) {
+      pos--;
+
+      char s[10];
+      sprintf(s, ANSI_MOVE_LEFT(1) "%c" ANSI_MOVE_LEFT(1), str[pos]);
+      write(STDOUT_FILENO, s, 10);
+
+      if (pos < 0) pos = 0;
+    } else if (
+      (c >= 'a' && c <= 'z') || 
+      (c >= 'A' && c <= 'Z') ||
+      isspace(c)
+    ) {
+      char s[11];
+      if (c == str[pos]) {
+        sprintf(s, ANSI_FG_GREEN "%c" ANSI_RESET, str[pos]);
+      } else {
+        sprintf(s, ANSI_FG_RED "%c" ANSI_RESET, str[pos]);
+      }
+      write(STDOUT_FILENO, s, 11);
+
+      if (pos == run_len - 1) {
+        break;
+      }
+
+      pos++;
+    }
+  }
+
+  write(STDOUT_FILENO, "\n", 1);
+
+  disable_raw_mode();
 }
