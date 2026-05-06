@@ -41,7 +41,8 @@ void start_test() {
 
   enable_raw_mode();
 
-  term_set_text(test);
+  term_feed_str(test);
+  term_write_str();
 
   char c;
   int pos = 0;
