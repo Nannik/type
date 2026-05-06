@@ -9,5 +9,5 @@ void disable_raw_mode();
 void enable_raw_mode();
 
 void term_set_text(char s[TYPETEST_BUF_SIZE]);
-void term_send_char(char ch, char color[ANSI_COLOR_SIZE]);
-void term_send_backspace(char replace);
+int term_send_char(char ch, char color[ANSI_COLOR_SIZE]);
+int term_send_backspace(char replace);

@@ -14,3 +14,6 @@ build: $(wildcard *.c)
 
 clean:
 	rm out
+
+install:
+	cp out /usr/local/bin/ttype

@@ -47,11 +47,7 @@ void start_test() {
   int pos = 0;
   while (read(STDIN_FILENO, &c, 1) == 1) {
     if (c == 127) {
-      pos--;
-
-      term_send_backspace(test[pos]);
-
-      if (pos < 0) pos = 0;
+      pos = term_send_backspace(test[pos - 1]);
     } else if (
       (c >= 'a' && c <= 'z') || 
       (c >= 'A' && c <= 'Z') ||
@@ -59,16 +55,14 @@ void start_test() {
     ) {
       char s[11];
       if (c == test[pos]) {
-        term_send_char(test[pos], ANSI_FG_GREEN);
+        pos = term_send_char(test[pos], ANSI_FG_GREEN);
       } else {
-        term_send_char(test[pos], ANSI_FG_RED);
+        pos = term_send_char(test[pos], ANSI_FG_RED);
       }
 
-      if (pos == test_len - 1) {
+      if (pos >= test_len) {
         break;
       }
-
-      pos++;
     }
   }
 }
