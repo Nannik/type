@@ -24,6 +24,7 @@ typedef struct Term {
   int rows_c;
   int rows_w[100];
   char str[TYPETEST_BUF_SIZE];
+  char str_fg[TYPETEST_BUF_SIZE][ANSI_COLOR_SIZE];
 } Term;
 Term t;
 
@@ -114,14 +115,42 @@ void term_feed_str(char s[TYPETEST_BUF_SIZE]) {
 }
 
 void term_write_str() {
-  char buf[TYPETEST_BUF_SIZE + 5 + 7 + 7];
-  int len = snprintf(
+  char buf[TYPETEST_BUF_SIZE + TYPETEST_BUF_SIZE * ANSI_COLOR_SIZE];
+  char *p = buf;
+  size_t rem = sizeof(buf);
+  size_t len = strlen(t.str);
+
+  int i;
+  int n = snprintf(
     buf,
     sizeof(buf),
-    ANSI_CLEAR ANSI_MOVE_RC(0, 0) "%s" ANSI_MOVE_RC(0, 0),
-    t.str
+    ANSI_CLEAR ANSI_MOVE_RC(0, 0)
   );
-  write(STDOUT_FILENO, buf, len);
+
+  if (n < 0) return;
+  p += n; rem -= n;
+
+  for (int i = 0; i <= t.pos; i++) {
+    memcpy(p, t.str_fg[i], ANSI_COLOR_SIZE);
+    p += ANSI_COLOR_SIZE;
+    *p++ = t.str[i];
+    rem -= ANSI_COLOR_SIZE + 1;
+  }
+
+  n = snprintf(p, rem, ANSI_RESET);
+  if (n < 0) return;
+  p += n; rem -= n;
+
+  for (i = t.pos + 1; i < strlen(t.str); i++) {
+    *p++ = t.str[i];
+    rem--;
+  }
+
+  n = snprintf(p, rem, ANSI_MOVE_RC(0, 0));
+  if (n < 0) return;
+  p += n; rem -= n;
+
+  write(STDOUT_FILENO, buf, p - buf);
 }
 
 int term_send_char(char ch, char color[ANSI_COLOR_SIZE]) {
@@ -134,6 +163,8 @@ int term_send_char(char ch, char color[ANSI_COLOR_SIZE]) {
     ch
   );
   write(STDOUT_FILENO, buf, len);
+
+  memcpy(t.str_fg[t.pos], color, ANSI_COLOR_SIZE);
 
   t.pos++;
   t.col++;
