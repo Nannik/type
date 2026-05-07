@@ -6,53 +6,127 @@
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 #include "term.h"
 
+#define ANSI_FG_GREEN "\033[32m"
+#define ANSI_FG_RED "\033[31m"
 #define ANSI_RESET "\033[0m"
 #define ANSI_CLEAR "\033[2J"
 #define ANSI_MOVE_LEFT(C) "\033[" #C "D"
 #define ANSI_MOVE_RC(R, C) "\033[" #R ";" #C "H"
 
-struct termios orig_term;
+typedef char color;
+#define COLOR_RESET 0
+#define COLOR_ACC 1
+#define COLOR_WRNG 2
+
+char *get_color_escape(color c) {
+  switch (c) {
+  case COLOR_RESET:
+    return ANSI_RESET;
+  case COLOR_ACC:
+    return ANSI_FG_GREEN;
+  case COLOR_WRNG:
+    return ANSI_FG_RED;
+  }
+
+  return "";
+}
 
 typedef struct Term {
-  int col;
-  int row;
   int width;
-  int pos;
-  int rows_c;
-  int rows_w[100];
-  char str[TYPETEST_BUF_SIZE];
-  char str_fg[TYPETEST_BUF_SIZE][ANSI_COLOR_SIZE];
 } Term;
 Term t;
+
+typedef struct Reference {
+  char s[TYPETEST_BUF_SIZE];
+  color acc[TYPETEST_BUF_SIZE];
+  int roww[128];
+  int rowc;
+} Reference;
+Reference ref;
+
+typedef struct Cursor {
+  int posn;
+  int posr;
+  int posc;
+} Cursor;
+Cursor cur;
+
+struct termios orig_term;
+
+void cur_pos_inc() {
+  cur.posn++;
+  cur.posc++;
+  if (cur.posc >= ref.roww[cur.posr]) {
+    cur.posc = 0;
+    cur.posr++;
+  }
+}
+
+void cur_pos_dec() {
+  if (cur.posn == 0) return;
+
+  cur.posn--;
+
+  if (cur.posc > 0) {
+    cur.posc--;
+  } else {
+    cur.posr--;
+    cur.posc = ref.roww[cur.posr] - 1;
+  }
+}
+
+void jump_to_cur() {
+  char buf[128];
+  int len = snprintf(
+    buf,
+    sizeof(buf),
+    "\033[%d;%dH",
+    cur.posr + 1, cur.posc + 1
+  );
+  write(STDOUT_FILENO, buf, len);
+}
+
+void cur_replace(char replace, color acc) {
+  char buf[128];
+
+  int len = snprintf(
+    buf,
+    sizeof(buf),
+    "%s\033[%d;%dH%c\033[%d;%dH",
+    get_color_escape(acc), cur.posr + 1, cur.posc + 1, replace, cur.posr + 1, cur.posc + 1
+  );
+  write(STDOUT_FILENO, buf, len);
+}
 
 void wrap_str() {
   int prev_space_pos = 0;
   int put = 0;
 
-  t.rows_c = 1;
+  ref.rowc = 1;
   for (int i = 0; i < TYPETEST_BUF_SIZE; i++) {
-    if (isspace(t.str[i])) {
-      t.str[i] = ' ';
+    if (isspace(ref.s[i])) {
+      ref.s[i] = ' ';
 
       if (i - put > t.width) {
-        t.str[prev_space_pos] = '\n';
-        t.rows_w[t.rows_c - 1] = prev_space_pos - put + 1;
-        t.rows_c++;
+        ref.s[prev_space_pos] = '\n';
+        ref.roww[ref.rowc - 1] = prev_space_pos - put + 1;
+        ref.rowc++;
         put = prev_space_pos + 1;
       }
 
       prev_space_pos = i;
-    } else if (t.str[i] == '\0') {
+    } else if (ref.s[i] == '\0') {
       if (i - put > t.width) {
-        t.str[prev_space_pos] = '\n';
-        t.rows_w[t.rows_c - 1] = prev_space_pos - put + 1;
-        t.rows_c++;
+        ref.s[prev_space_pos] = '\n';
+        ref.roww[ref.rowc - 1] = prev_space_pos - put + 1;
+        ref.rowc++;
         put = prev_space_pos + 1;
       }
-      t.rows_w[t.rows_c - 1] = i - put + 1;
+      ref.roww[ref.rowc - 1] = i - put + 1;
       break;
     }
   }
@@ -68,11 +142,11 @@ void update_term_width(int signo) {
   term_write_str();
 
   int c = 0, pc = 0;
-  for (int i = 0; i < t.rows_c; i++) {
-    c += t.rows_w[i];
-    if (c >= t.pos) {
-      t.row = i;
-      t.col = t.pos - pc;
+  for (int i = 0; i < ref.rowc; i++) {
+    c += ref.roww[i];
+    if (c >= cur.posn) {
+      cur.posr = i;
+      cur.posc = cur.posn - pc;
       break;
     }
     pc = c;
@@ -83,7 +157,7 @@ void update_term_width(int signo) {
     buf,
     sizeof(buf),
     "\033[%d;%dH",
-    t.row + 1, t.col + 1
+    cur.posr + 1, cur.posc + 1
   );
   write(STDOUT_FILENO, buf, len);
 }
@@ -104,21 +178,21 @@ void enable_raw_mode() {
   update_term_width(SIGWINCH);
   signal(SIGWINCH, update_term_width);
 
-  t.col = 0;
-  t.row = 0;
-  t.pos = 0;
+  cur.posc = 0;
+  cur.posr = 0;
+  cur.posn = 0;
 }
 
 void term_feed_str(char s[TYPETEST_BUF_SIZE]) {
-  strcpy(t.str, s);
+  strcpy(ref.s, s);
   wrap_str();
 }
 
 void term_write_str() {
-  char buf[TYPETEST_BUF_SIZE + TYPETEST_BUF_SIZE * ANSI_COLOR_SIZE];
+  char buf[TYPETEST_BUF_SIZE * 8];
   char *p = buf;
   size_t rem = sizeof(buf);
-  size_t len = strlen(t.str);
+  size_t len = strlen(ref.s);
 
   int i;
   int n = snprintf(
@@ -130,19 +204,21 @@ void term_write_str() {
   if (n < 0) return;
   p += n; rem -= n;
 
-  for (int i = 0; i <= t.pos; i++) {
-    memcpy(p, t.str_fg[i], ANSI_COLOR_SIZE);
-    p += ANSI_COLOR_SIZE;
-    *p++ = t.str[i];
-    rem -= ANSI_COLOR_SIZE + 1;
+  for (int i = 0; i < cur.posn; i++) {
+    char *esc = get_color_escape(ref.acc[i]);
+    char n = strlen(esc);
+    memcpy(p, esc, n);
+    p += n;
+    *p++ = ref.s[i];
+    rem -= n + 1;
   }
 
   n = snprintf(p, rem, ANSI_RESET);
   if (n < 0) return;
   p += n; rem -= n;
 
-  for (i = t.pos + 1; i < strlen(t.str); i++) {
-    *p++ = t.str[i];
+  for (i = cur.posn; i < strlen(ref.s); i++) {
+    *p++ = ref.s[i];
     rem--;
   }
 
@@ -153,67 +229,24 @@ void term_write_str() {
   write(STDOUT_FILENO, buf, p - buf);
 }
 
-int term_send_char(char ch, char color[ANSI_COLOR_SIZE]) {
-  char buf[ANSI_COLOR_SIZE + 10];
-  int len = snprintf(
-    buf,
-    sizeof(buf),
-    "%s%c" ANSI_RESET,
-    color,
-    ch
-  );
-  write(STDOUT_FILENO, buf, len);
-
-  memcpy(t.str_fg[t.pos], color, ANSI_COLOR_SIZE);
-
-  t.pos++;
-  t.col++;
-  if (t.col >= t.rows_w[t.row]) {
-    t.col = 0;
-    t.row++;
-
-    char buf[10];
-    int len = snprintf(
-      buf,
-      sizeof(buf),
-      "\033[%d;0H",
-      t.row + 1
-    );
-    write(STDOUT_FILENO, buf, len);
+int term_send_char(char ch, bool is_acc) {
+  if (is_acc) {
+    cur_replace(ch, COLOR_ACC);
+    ref.acc[cur.posn] = COLOR_ACC;
+  } else {
+    cur_replace(ch, COLOR_WRNG);
+    ref.acc[cur.posn] = COLOR_WRNG;
   }
 
-  return t.pos;
+  cur_pos_inc();
+  jump_to_cur();
+
+  return cur.posn;
 }
 
 int term_send_backspace(char replace) {
-  char buf[100];
-  int len;
+  cur_pos_dec();
+  cur_replace(replace, COLOR_RESET);
 
-  if (t.col > 0) {
-    t.col--;
-
-    len = snprintf(
-      buf, 
-      sizeof(buf), 
-      ANSI_MOVE_LEFT(1) "%c" ANSI_MOVE_LEFT(1),
-      replace
-    );
-  } else if (t.row > 0) {
-    len = snprintf(
-      buf, 
-      sizeof(buf), 
-      "\033[%d;%dH%c\033[%d;%dH",
-      t.row, t.rows_w[t.row - 1], replace, t.row, t.rows_w[t.row - 1]
-    );
-
-    t.col = t.rows_w[t.row - 1] - 1;
-    t.row--;
-  } else {
-    return 0;
-  }
-
-  write(STDOUT_FILENO, buf, len);
-
-  t.pos--;
-  return t.pos;
+  return cur.posn;
 }

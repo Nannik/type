@@ -56,9 +56,9 @@ void start_test() {
     ) {
       char s[11];
       if (c == test[pos]) {
-        pos = term_send_char(test[pos], ANSI_FG_GREEN);
+        pos = term_send_char(test[pos], true);
       } else {
-        pos = term_send_char(test[pos], ANSI_FG_RED);
+        pos = term_send_char(test[pos], false);
       }
 
       if (pos >= test_len) {
