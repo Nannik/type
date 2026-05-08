@@ -25,21 +25,6 @@ typedef char color;
 #define COLOR_ACC 1
 #define COLOR_WRNG 2
 
-void term_write_str();
-
-char *get_color_escape(color c) {
-  switch (c) {
-  case COLOR_RESET:
-    return ANSI_RESET;
-  case COLOR_ACC:
-    return ANSI_FG_GREEN;
-  case COLOR_WRNG:
-    return ANSI_FG_RED;
-  }
-
-  return "";
-}
-
 typedef struct Term {
   int width;
 } Term;
@@ -67,7 +52,160 @@ Cursor cur;
 
 struct termios orig_term;
 
-void term_wrap() {
+
+static void cur_pos_inc();
+static void cur_pos_dec();
+static void cur_replace(char, color);
+static void jump_to_cur();
+static int get_cur_offset();
+
+static void term_wrap();
+static void term_gen_ref_line();
+static void term_write_str();
+static char *get_color_escape(color);
+static void update_term_width(int signo);
+
+static void enable_raw_mode();
+
+
+void term_init(reference_generator gen) {
+  ref_gen = gen;
+
+  cur.posc = 0;
+  cur.posr = 0;
+  cur.posn = 0;
+
+  ref.base.len = 0;
+
+  enable_raw_mode();
+
+  update_term_width(SIGWINCH);
+  signal(SIGWINCH, update_term_width);
+
+  for (int i = 0; i < LINE_N; i++) {
+    term_gen_ref_line();
+  }
+  term_wrap();
+
+  term_write_str();
+}
+
+int term_send_char(char ch, bool is_acc) {
+  if (is_acc) {
+    cur_replace(ch, COLOR_ACC);
+    ref.acc[cur.posn] = COLOR_ACC;
+  } else {
+    cur_replace(ch, COLOR_WRNG);
+    ref.acc[cur.posn] = COLOR_WRNG;
+  }
+
+  cur_pos_inc();
+  jump_to_cur();
+
+  return cur.posn;
+}
+
+int term_send_backspace(char replace) {
+  cur_pos_dec();
+  cur_replace(replace, COLOR_RESET);
+
+  return cur.posn;
+}
+
+void disable_raw_mode() {
+  tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_term);
+}
+
+static void enable_raw_mode() {
+  tcgetattr(STDIN_FILENO, &orig_term);
+  atexit(disable_raw_mode);
+
+  struct termios raw = orig_term;
+  raw.c_lflag &= ~(ICANON | ECHO);
+
+  tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+
+}
+
+
+static void cur_pos_inc() {
+  cur.posn++;
+  cur.posc++;
+  if (cur.posc >= ref.roww[cur.posr]) {
+    cur.posc = 0;
+    cur.posr++;
+
+    int genc = cur.posr + LINE_OFFSET - ref.rowc + 2;
+    for (int i = 0; i < genc; i++) {
+      term_gen_ref_line();
+    }
+    term_wrap();
+    term_write_str();
+  }
+}
+
+static void cur_pos_dec() {
+  if (cur.posn == 0) return;
+
+  cur.posn--;
+
+  if (cur.posc > 0) {
+    cur.posc--;
+  } else {
+    cur.posr--;
+    cur.posc = ref.roww[cur.posr] - 1;
+
+    term_write_str();
+  }
+}
+
+static void cur_replace(char replace, color acc) {
+  char buf[128];
+
+  int offset = get_cur_offset();
+  int len = snprintf(
+    buf,
+    sizeof(buf),
+    "%s\033[%d;%dH%c\033[%d;%dH",
+    get_color_escape(acc), cur.posr + 1 - offset, cur.posc + 1, replace, cur.posr + 1 - offset, cur.posc + 1
+  );
+  write(STDOUT_FILENO, buf, len);
+}
+
+static void jump_to_cur() {
+  char buf[128];
+
+  int offset = get_cur_offset();
+  int len = snprintf(
+    buf,
+    sizeof(buf),
+    "\033[%d;%dH",
+    cur.posr + 1 - offset, cur.posc + 1
+  );
+  write(STDOUT_FILENO, buf, len);
+}
+
+static int get_cur_offset() {
+  int offset = (cur.posr + 1) - (LINE_N - LINE_OFFSET);
+  if (offset < 0) offset = 0;
+
+  return offset;
+}
+
+static char *get_color_escape(color c) {
+  switch (c) {
+  case COLOR_RESET:
+    return ANSI_RESET;
+  case COLOR_ACC:
+    return ANSI_FG_GREEN;
+  case COLOR_WRNG:
+    return ANSI_FG_RED;
+  }
+
+  return "";
+}
+
+static void term_wrap() {
   int prev_space_pos = 0;
   int put = 0;
 
@@ -97,7 +235,7 @@ void term_wrap() {
   }
 }
 
-void term_gen_ref_line() {
+static void term_gen_ref_line() {
   if (stop_gen) {
     return;
   }
@@ -121,71 +259,7 @@ void term_gen_ref_line() {
   ref.base.s[ref.base.len] = '\0';
 }
 
-void cur_pos_inc() {
-  cur.posn++;
-  cur.posc++;
-  if (cur.posc >= ref.roww[cur.posr]) {
-    cur.posc = 0;
-    cur.posr++;
-
-    int genc = cur.posr + LINE_OFFSET - ref.rowc + 2;
-    for (int i = 0; i < genc; i++) {
-      term_gen_ref_line();
-    }
-    term_wrap();
-    term_write_str();
-  }
-}
-
-void cur_pos_dec() {
-  if (cur.posn == 0) return;
-
-  cur.posn--;
-
-  if (cur.posc > 0) {
-    cur.posc--;
-  } else {
-    cur.posr--;
-    cur.posc = ref.roww[cur.posr] - 1;
-
-    term_write_str();
-  }
-}
-
-int get_cur_offset() {
-  int offset = (cur.posr + 1) - (LINE_N - LINE_OFFSET);
-  if (offset < 0) offset = 0;
-
-  return offset;
-}
-
-void jump_to_cur() {
-  char buf[128];
-
-  int offset = get_cur_offset();
-  int len = snprintf(
-    buf,
-    sizeof(buf),
-    "\033[%d;%dH",
-    cur.posr + 1 - offset, cur.posc + 1
-  );
-  write(STDOUT_FILENO, buf, len);
-}
-
-void cur_replace(char replace, color acc) {
-  char buf[128];
-
-  int offset = get_cur_offset();
-  int len = snprintf(
-    buf,
-    sizeof(buf),
-    "%s\033[%d;%dH%c\033[%d;%dH",
-    get_color_escape(acc), cur.posr + 1 - offset, cur.posc + 1, replace, cur.posr + 1 - offset, cur.posc + 1
-  );
-  write(STDOUT_FILENO, buf, len);
-}
-
-void term_write_str() {
+static void term_write_str() {
   char buf[TYPETEST_BUF_SIZE * 8];
   char *p = buf;
   size_t rem = sizeof(buf);
@@ -236,8 +310,7 @@ void term_write_str() {
   write(STDOUT_FILENO, buf, p - buf);
 }
 
-
-void update_term_width(int signo) {
+static void update_term_width(int signo) {
   struct winsize wins;
   ioctl(STDOUT_FILENO, TIOCGWINSZ, &wins);
 
@@ -265,63 +338,4 @@ void update_term_width(int signo) {
     cur.posr + 1, cur.posc + 1
   );
   write(STDOUT_FILENO, buf, len);
-}
-
-void disable_raw_mode() {
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_term);
-}
-
-void enable_raw_mode() {
-  tcgetattr(STDIN_FILENO, &orig_term);
-  atexit(disable_raw_mode);
-
-  struct termios raw = orig_term;
-  raw.c_lflag &= ~(ICANON | ECHO);
-
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-
-}
-
-void term_init(reference_generator gen) {
-  ref_gen = gen;
-
-  cur.posc = 0;
-  cur.posr = 0;
-  cur.posn = 0;
-
-  ref.base.len = 0;
-
-  enable_raw_mode();
-
-  update_term_width(SIGWINCH);
-  signal(SIGWINCH, update_term_width);
-
-  for (int i = 0; i < LINE_N; i++) {
-    term_gen_ref_line();
-  }
-  term_wrap();
-
-  term_write_str();
-}
-
-int term_send_char(char ch, bool is_acc) {
-  if (is_acc) {
-    cur_replace(ch, COLOR_ACC);
-    ref.acc[cur.posn] = COLOR_ACC;
-  } else {
-    cur_replace(ch, COLOR_WRNG);
-    ref.acc[cur.posn] = COLOR_WRNG;
-  }
-
-  cur_pos_inc();
-  jump_to_cur();
-
-  return cur.posn;
-}
-
-int term_send_backspace(char replace) {
-  cur_pos_dec();
-  cur_replace(replace, COLOR_RESET);
-
-  return cur.posn;
 }

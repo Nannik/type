@@ -5,15 +5,15 @@
 
 #include "args.h"
 
+
+void print_usage();
+
+
 Settings config = {
   .wordc = 10,
   .time = 0,
   .dictionary_filepath = "dictionary"
 };
-
-void print_usage () {
-  fprintf(stderr, "Usage: [-twr] [preset]\n");
-}
 
 void configure(int argc, char **argv) {
   int opt;
@@ -49,3 +49,9 @@ void configure(int argc, char **argv) {
     config.dictionary_filepath = argv[optind];
   }
 }
+
+
+void print_usage () {
+  fprintf(stderr, "Usage: [-twr] [preset]\n");
+}
+

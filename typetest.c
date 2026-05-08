@@ -11,19 +11,20 @@
 #define WORDS_BUF_SIZE 10000
 #define WORD_SIZE 100
 
+
 int words_c = 0;
 char words[WORDS_BUF_SIZE][WORD_SIZE];
+
+
+int pick (char *);
+
+
 void read_dictionary (FILE *f) {
   char word[WORD_SIZE];
 
   while (fscanf(f, "%99s", word) == 1 && words_c < WORDS_BUF_SIZE) {
     strcpy(words[words_c++], word);
   };
-}
-
-int pick (char *res) {
-  strcpy(res, words[rand() % words_c]);
-  return strlen(res);
 }
 
 void start_test() {
@@ -52,3 +53,10 @@ void start_test() {
     }
   }
 }
+
+
+int pick (char *res) {
+  strcpy(res, words[rand() % words_c]);
+  return strlen(res);
+}
+
