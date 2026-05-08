@@ -6,9 +6,8 @@
 #include "args.h"
 
 Settings config = {
-  .words_count = 10,
-  .run_time = 30,
-  .repeat_count = 0,
+  .wordc = 10,
+  .time = 0,
   .dictionary_filepath = "dictionary"
 };
 
@@ -23,7 +22,7 @@ void configure(int argc, char **argv) {
   while ((opt = getopt(argc, argv, "t:w:r")) != -1) {
     switch (opt) {
     case 't':
-      config.run_time = strtol(optarg, &end, 10);
+      config.time = strtol(optarg, &end, 10);
 
       if (*end != '\0') {
         fprintf(stderr, "Option(-t) parsing error: Invalid characters detected\n");
@@ -32,19 +31,10 @@ void configure(int argc, char **argv) {
       }
       break;
     case 'w':
-      config.words_count = strtol(optarg, &end, 10);
+      config.wordc = strtol(optarg, &end, 10);
 
       if (*end != '\0') {
         fprintf(stderr, "Option(-w) parsing error: Invalid characters detected\n");
-        print_usage();
-        exit(EXIT_FAILURE);
-      }
-      break;
-    case 'r':
-      config.repeat_count = strtol(optarg, &end, 10);
-
-      if (*end != '\0') {
-        fprintf(stderr, "Option(-r) parsing error: Invalid characters detected\n");
         print_usage();
         exit(EXIT_FAILURE);
       }

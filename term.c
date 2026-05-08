@@ -10,6 +10,9 @@
 
 #include "term.h"
 
+#define LINE_N 3
+#define LINE_OFFSET 1
+
 #define ANSI_FG_GREEN "\033[32m"
 #define ANSI_FG_RED "\033[31m"
 #define ANSI_RESET "\033[0m"
@@ -21,6 +24,8 @@ typedef char color;
 #define COLOR_RESET 0
 #define COLOR_ACC 1
 #define COLOR_WRNG 2
+
+void term_write_str();
 
 char *get_color_escape(color c) {
   switch (c) {
@@ -40,13 +45,18 @@ typedef struct Term {
 } Term;
 Term t;
 
-typedef struct Reference {
-  char s[TYPETEST_BUF_SIZE];
+typedef struct _Reference {
+  Reference base;
+  // char s[TYPETEST_BUF_SIZE];
   color acc[TYPETEST_BUF_SIZE];
   int roww[128];
   int rowc;
-} Reference;
-Reference ref;
+} _Reference;
+_Reference ref;
+Reference *term_ref = (Reference *) &ref;
+
+reference_generator ref_gen;
+bool stop_gen = false;
 
 typedef struct Cursor {
   int posn;
@@ -57,12 +67,73 @@ Cursor cur;
 
 struct termios orig_term;
 
+void term_wrap() {
+  int prev_space_pos = 0;
+  int put = 0;
+
+  ref.rowc = 1;
+  for (int i = 0; i < TYPETEST_BUF_SIZE; i++) {
+    if (isspace(ref.base.s[i])) {
+      ref.base.s[i] = ' ';
+
+      if (i - put > t.width) {
+        ref.base.s[prev_space_pos] = '\n';
+        ref.roww[ref.rowc - 1] = prev_space_pos - put + 1;
+        ref.rowc++;
+        put = prev_space_pos + 1;
+      }
+
+      prev_space_pos = i;
+    } else if (ref.base.s[i] == '\0') {
+      if (i - put > t.width) {
+        ref.base.s[prev_space_pos] = '\n';
+        ref.roww[ref.rowc - 1] = prev_space_pos - put + 1;
+        ref.rowc++;
+        put = prev_space_pos + 1;
+      }
+      ref.roww[ref.rowc - 1] = i - put + 1;
+      break;
+    }
+  }
+}
+
+void term_gen_ref_line() {
+  if (stop_gen) {
+    return;
+  }
+
+  char buf[64];
+
+  int rem = t.width - 1;
+  while (rem > 0) {
+    int len = ref_gen(buf);
+    if (len == -1) {
+      stop_gen = true;
+      break;
+    }
+
+    memcpy(ref.base.s + ref.base.len, buf, len);
+    ref.base.len += len;
+    ref.base.s[ref.base.len++] = ' ';
+
+    rem -= len + 1;
+  }
+  ref.base.s[ref.base.len] = '\0';
+}
+
 void cur_pos_inc() {
   cur.posn++;
   cur.posc++;
   if (cur.posc >= ref.roww[cur.posr]) {
     cur.posc = 0;
     cur.posr++;
+
+    int genc = cur.posr + LINE_OFFSET - ref.rowc + 2;
+    for (int i = 0; i < genc; i++) {
+      term_gen_ref_line();
+    }
+    term_wrap();
+    term_write_str();
   }
 }
 
@@ -76,16 +147,27 @@ void cur_pos_dec() {
   } else {
     cur.posr--;
     cur.posc = ref.roww[cur.posr] - 1;
+
+    term_write_str();
   }
+}
+
+int get_cur_offset() {
+  int offset = (cur.posr + 1) - (LINE_N - LINE_OFFSET);
+  if (offset < 0) offset = 0;
+
+  return offset;
 }
 
 void jump_to_cur() {
   char buf[128];
+
+  int offset = get_cur_offset();
   int len = snprintf(
     buf,
     sizeof(buf),
     "\033[%d;%dH",
-    cur.posr + 1, cur.posc + 1
+    cur.posr + 1 - offset, cur.posc + 1
   );
   write(STDOUT_FILENO, buf, len);
 }
@@ -93,44 +175,67 @@ void jump_to_cur() {
 void cur_replace(char replace, color acc) {
   char buf[128];
 
+  int offset = get_cur_offset();
   int len = snprintf(
     buf,
     sizeof(buf),
     "%s\033[%d;%dH%c\033[%d;%dH",
-    get_color_escape(acc), cur.posr + 1, cur.posc + 1, replace, cur.posr + 1, cur.posc + 1
+    get_color_escape(acc), cur.posr + 1 - offset, cur.posc + 1, replace, cur.posr + 1 - offset, cur.posc + 1
   );
   write(STDOUT_FILENO, buf, len);
 }
 
-void wrap_str() {
-  int prev_space_pos = 0;
-  int put = 0;
+void term_write_str() {
+  char buf[TYPETEST_BUF_SIZE * 8];
+  char *p = buf;
+  size_t rem = sizeof(buf);
+  size_t len = strlen(ref.base.s);
 
-  ref.rowc = 1;
-  for (int i = 0; i < TYPETEST_BUF_SIZE; i++) {
-    if (isspace(ref.s[i])) {
-      ref.s[i] = ' ';
+  int n = snprintf(
+    buf,
+    sizeof(buf),
+    ANSI_CLEAR ANSI_MOVE_RC(0, 0)
+  );
 
-      if (i - put > t.width) {
-        ref.s[prev_space_pos] = '\n';
-        ref.roww[ref.rowc - 1] = prev_space_pos - put + 1;
-        ref.rowc++;
-        put = prev_space_pos + 1;
-      }
+  if (n < 0) return;
+  p += n; rem -= n;
 
-      prev_space_pos = i;
-    } else if (ref.s[i] == '\0') {
-      if (i - put > t.width) {
-        ref.s[prev_space_pos] = '\n';
-        ref.roww[ref.rowc - 1] = prev_space_pos - put + 1;
-        ref.rowc++;
-        put = prev_space_pos + 1;
-      }
-      ref.roww[ref.rowc - 1] = i - put + 1;
-      break;
-    }
+  int offset = get_cur_offset();
+  int start = 0;
+  for (int i = 0; i < offset; i++) {
+    start += ref.roww[i];
   }
+
+  int end = start;
+  for (int i = 0; i < LINE_N; i++) {
+    end += ref.roww[i + offset];
+  }
+
+  for (int i = start; i < cur.posn; i++) {
+    char *esc = get_color_escape(ref.acc[i]);
+    char n = strlen(esc);
+    memcpy(p, esc, n);
+    p += n;
+    *p++ = ref.base.s[i];
+    rem -= n + 1;
+  }
+
+  n = snprintf(p, rem, ANSI_RESET);
+  if (n < 0) return;
+  p += n; rem -= n;
+
+  for (int i = cur.posn; i < end; i++) {
+    *p++ = ref.base.s[i];
+    rem--;
+  }
+
+  n = snprintf(p, rem, ANSI_MOVE_RC(0, 0));
+  if (n < 0) return;
+  p += n; rem -= n;
+
+  write(STDOUT_FILENO, buf, p - buf);
 }
+
 
 void update_term_width(int signo) {
   struct winsize wins;
@@ -138,7 +243,7 @@ void update_term_width(int signo) {
 
   t.width = wins.ws_col - 1;
 
-  wrap_str();
+  term_wrap();
   term_write_str();
 
   int c = 0, pc = 0;
@@ -175,58 +280,28 @@ void enable_raw_mode() {
 
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 
-  update_term_width(SIGWINCH);
-  signal(SIGWINCH, update_term_width);
+}
+
+void term_init(reference_generator gen) {
+  ref_gen = gen;
 
   cur.posc = 0;
   cur.posr = 0;
   cur.posn = 0;
-}
 
-void term_feed_str(char s[TYPETEST_BUF_SIZE]) {
-  strcpy(ref.s, s);
-  wrap_str();
-}
+  ref.base.len = 0;
 
-void term_write_str() {
-  char buf[TYPETEST_BUF_SIZE * 8];
-  char *p = buf;
-  size_t rem = sizeof(buf);
-  size_t len = strlen(ref.s);
+  enable_raw_mode();
 
-  int i;
-  int n = snprintf(
-    buf,
-    sizeof(buf),
-    ANSI_CLEAR ANSI_MOVE_RC(0, 0)
-  );
+  update_term_width(SIGWINCH);
+  signal(SIGWINCH, update_term_width);
 
-  if (n < 0) return;
-  p += n; rem -= n;
-
-  for (int i = 0; i < cur.posn; i++) {
-    char *esc = get_color_escape(ref.acc[i]);
-    char n = strlen(esc);
-    memcpy(p, esc, n);
-    p += n;
-    *p++ = ref.s[i];
-    rem -= n + 1;
+  for (int i = 0; i < LINE_N; i++) {
+    term_gen_ref_line();
   }
+  term_wrap();
 
-  n = snprintf(p, rem, ANSI_RESET);
-  if (n < 0) return;
-  p += n; rem -= n;
-
-  for (i = cur.posn; i < strlen(ref.s); i++) {
-    *p++ = ref.s[i];
-    rem--;
-  }
-
-  n = snprintf(p, rem, ANSI_MOVE_RC(0, 0));
-  if (n < 0) return;
-  p += n; rem -= n;
-
-  write(STDOUT_FILENO, buf, p - buf);
+  term_write_str();
 }
 
 int term_send_char(char ch, bool is_acc) {

@@ -21,47 +21,32 @@ void read_dictionary (FILE *f) {
   };
 }
 
-void pick (char *res) {
+int pick (char *res) {
   strcpy(res, words[rand() % words_c]);
-  strcat(res, " ");
+  return strlen(res);
 }
 
 void start_test() {
-  char test[TYPETEST_BUF_SIZE];
-  test[0] = '\0';
-
-  char picked_word[WORD_SIZE];
-  for (int i = 0; i < config.words_count; i++) {
-    pick(picked_word);
-    strcat(test, picked_word);
-  }
-
-  int test_len = strlen(test) - 1;
-  test[test_len] = '\0';
-
-  enable_raw_mode();
-
-  term_feed_str(test);
-  term_write_str();
+  term_init(pick);
 
   char c;
   int pos = 0;
   while (read(STDIN_FILENO, &c, 1) == 1) {
     if (c == 127) {
-      pos = term_send_backspace(test[pos - 1]);
+      pos = term_send_backspace(term_ref->s[pos - 1]);
     } else if (
       (c >= 'a' && c <= 'z') || 
       (c >= 'A' && c <= 'Z') ||
       isspace(c)
     ) {
       char s[11];
-      if (c == test[pos]) {
-        pos = term_send_char(test[pos], true);
+      if (c == term_ref->s[pos]) {
+        pos = term_send_char(term_ref->s[pos], true);
       } else {
-        pos = term_send_char(test[pos], false);
+        pos = term_send_char(term_ref->s[pos], false);
       }
 
-      if (pos >= test_len) {
+      if (pos >= term_ref->len) {
         break;
       }
     }

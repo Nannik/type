@@ -4,10 +4,16 @@
 
 #define TYPETEST_BUF_SIZE 1024
 
-void disable_raw_mode();
-void enable_raw_mode();
+typedef struct Reference {
+  int len;
+  char s[TYPETEST_BUF_SIZE];
+} Reference;
+extern Reference *term_ref;
 
-void term_feed_str(char s[TYPETEST_BUF_SIZE]);
-void term_write_str();
+void disable_raw_mode();
+
+typedef int (*reference_generator)(char *buf);
+void term_init(reference_generator);
+
 int term_send_char(char ch, bool acc);
 int term_send_backspace(char replace);

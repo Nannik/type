@@ -2,9 +2,8 @@
 
 typedef struct Settings Settings;
 struct Settings {
-  int words_count;
-  int run_time;
-  int repeat_count;
+  int wordc;
+  int time;
   char *dictionary_filepath;
 };
 
