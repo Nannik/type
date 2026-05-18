@@ -3,7 +3,7 @@
 typedef struct Settings Settings;
 struct Settings {
   int wordc;
-  int time;
+  int time; // test time in seconds
   char *dictionary_filepath;
 };
 

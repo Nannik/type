@@ -12,9 +12,8 @@
 FILE *f;
 
 void handle_signal (int sig) {
-  if (f) fclose(f);
   disable_raw_mode();
-  exit(EXIT_FAILURE);
+  _exit(EXIT_FAILURE);
 }
 
 int main(int argc, char **argv) {

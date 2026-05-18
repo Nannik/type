@@ -1,4 +1,6 @@
+#include <pthread.h>
 #include <ctype.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,11 +14,15 @@
 #define WORD_SIZE 100
 
 
+volatile sig_atomic_t stop = 0;
+
 int words_c = 0;
 char words[WORDS_BUF_SIZE][WORD_SIZE];
 
 
 int pick (char *);
+void on_timer_stop(int);
+void* timer(void *arg);
 
 
 void read_dictionary (FILE *f) {
@@ -28,11 +34,21 @@ void read_dictionary (FILE *f) {
 }
 
 void start_test() {
+  pthread_t p;
+  pthread_create(&p, NULL, timer, NULL);
+
+  struct sigaction int_handler = {
+    .sa_handler=on_timer_stop,
+    .sa_flags=0
+  };
+  sigemptyset(&int_handler.sa_mask);
+  sigaction(SIGINT,&int_handler,0);
+
   term_init(pick);
 
   char c;
   int pos = 0;
-  while (read(STDIN_FILENO, &c, 1) == 1) {
+  while (!stop && read(STDIN_FILENO, &c, 1) != -1) {
     if (c == 127) {
       pos = term_send_backspace(term_ref->s[pos - 1]);
     } else if (
@@ -60,3 +76,17 @@ int pick (char *res) {
   return strlen(res);
 }
 
+void on_timer_stop(int sig) {
+  stop = 1;
+}
+
+void* timer(void *arg) {
+  if (config.time == 0) {
+    return 0;
+  }
+
+  sleep(config.time);
+  kill(getpid(), SIGINT);
+
+  return 0;
+}
