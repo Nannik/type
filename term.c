@@ -20,6 +20,8 @@
 #define ANSI_MOVE_LEFT(C) "\033[" #C "D"
 #define ANSI_MOVE_RC(R, C) "\033[" #R ";" #C "H"
 
+#define SL_HEIGHT 1
+
 typedef char color;
 #define COLOR_RESET 0
 #define COLOR_ACC 1
@@ -51,6 +53,8 @@ typedef struct Cursor {
 Cursor cur;
 
 struct termios orig_term;
+
+char sl[STATUS_LINE_SIZE];
 
 
 static void cur_pos_inc();
@@ -112,6 +116,22 @@ int term_send_backspace(char replace) {
   return cur.posn;
 }
 
+void term_update_status_line(char *new_sl) {
+  char buf[STATUS_LINE_SIZE + 32];
+  int len = snprintf(
+    buf,
+    sizeof(buf),
+    "\033[H\033[0K\033[0m%s",
+    new_sl
+  );
+
+  write(STDOUT_FILENO, buf, len);
+
+  jump_to_cur();
+
+  strcpy(sl, new_sl);
+}
+
 void disable_raw_mode() {
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_term);
 }
@@ -124,7 +144,6 @@ static void enable_raw_mode() {
   raw.c_lflag &= ~(ICANON | ECHO);
 
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-
 }
 
 
@@ -167,7 +186,7 @@ static void cur_replace(char replace, color acc) {
     buf,
     sizeof(buf),
     "%s\033[%d;%dH%c\033[%d;%dH",
-    get_color_escape(acc), cur.posr + 1 - offset, cur.posc + 1, replace, cur.posr + 1 - offset, cur.posc + 1
+    get_color_escape(acc), SL_HEIGHT + cur.posr + 1 - offset, cur.posc + 1, replace, SL_HEIGHT + cur.posr + 1 - offset, cur.posc + 1
   );
   write(STDOUT_FILENO, buf, len);
 }
@@ -180,7 +199,7 @@ static void jump_to_cur() {
     buf,
     sizeof(buf),
     "\033[%d;%dH",
-    cur.posr + 1 - offset, cur.posc + 1
+    SL_HEIGHT + cur.posr + 1 - offset, cur.posc + 1
   );
   write(STDOUT_FILENO, buf, len);
 }
@@ -268,7 +287,8 @@ static void term_write_str() {
   int n = snprintf(
     buf,
     sizeof(buf),
-    ANSI_CLEAR ANSI_MOVE_RC(0, 0)
+    ANSI_CLEAR "\033[%d;0H",
+    SL_HEIGHT + 1
   );
 
   if (n < 0) return;
@@ -303,7 +323,7 @@ static void term_write_str() {
     rem--;
   }
 
-  n = snprintf(p, rem, ANSI_MOVE_RC(0, 0));
+  n = snprintf(p, rem, "\033[%d;0H", SL_HEIGHT + 1);
   if (n < 0) return;
   p += n; rem -= n;
 
@@ -335,7 +355,7 @@ static void update_term_width(int signo) {
     buf,
     sizeof(buf),
     "\033[%d;%dH",
-    cur.posr + 1, cur.posc + 1
+    SL_HEIGHT + cur.posr + 1, cur.posc + 1
   );
   write(STDOUT_FILENO, buf, len);
 }
