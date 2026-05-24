@@ -39,8 +39,7 @@ void read_dictionary (FILE *f) {
 }
 
 void start_test() {
-  pthread_t p;
-  pthread_create(&p, NULL, timer, NULL);
+  pthread_t p = 0;
 
   struct sigaction int_handler = {
     .sa_handler=on_timer_stop,
@@ -69,6 +68,10 @@ void start_test() {
       (c >= 'A' && c <= 'Z') ||
       isspace(c)
     ) {
+      if (p == 0) {
+        pthread_create(&p, NULL, timer, NULL);
+      }
+
       if (isspace(term_ref->s[pos])) {
         cur_word++;
       }
@@ -95,7 +98,7 @@ void start_test() {
 
 int generated_c = 0;
 int pick (char *res) {
-  if (config.wordc > 0 && generated_c++ < config.wordc) {
+  if (config.wordc == 0 || generated_c++ < config.wordc) {
     strcpy(res, words[rand() % words_c]);
     return strlen(res);
   }

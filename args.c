@@ -10,7 +10,7 @@ void print_usage();
 
 
 Settings config = {
-  .wordc = 10,
+  .wordc = 0,
   .time = 0,
   .dictionary_filepath = "dictionary"
 };
@@ -43,6 +43,10 @@ void configure(int argc, char **argv) {
       print_usage();
       exit(EXIT_FAILURE);
     }
+  }
+
+  if (config.wordc == 0 && config.time == 0) {
+    config.wordc = 30;
   }
 
   if (argc > optind) {
