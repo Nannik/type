@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "dataset.h"
 #include "typetest.h"
 #include "args.h"
 #include "term.h"
@@ -56,6 +57,13 @@ void start_test() {
 
   char c;
   while (!stop && read(STDIN_FILENO, &c, 1) != -1) {
+    if (p == 0) {
+      pthread_create(&p, NULL, timer, NULL);
+      dataset_start_test();
+    }
+
+    dataset_write(pos, term_ref->s[pos], c);
+
     if (c == 127) {
       pos = term_send_backspace(term_ref->s[pos - 1]);
 
@@ -68,10 +76,6 @@ void start_test() {
       (c >= 'A' && c <= 'Z') ||
       isspace(c)
     ) {
-      if (p == 0) {
-        pthread_create(&p, NULL, timer, NULL);
-      }
-
       if (isspace(term_ref->s[pos])) {
         cur_word++;
       }

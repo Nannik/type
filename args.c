@@ -12,7 +12,8 @@ void print_usage();
 Settings config = {
   .wordc = 0,
   .time = 0,
-  .dictionary_filepath = "dictionary"
+  .dictionary_filepath = "dictionary",
+  .profile_filepath = "profile"
 };
 
 void configure(int argc, char **argv) {
