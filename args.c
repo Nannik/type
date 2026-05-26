@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
@@ -13,14 +14,16 @@ Settings config = {
   .wordc = 0,
   .time = 0,
   .dictionary_filepath = "dictionary",
-  .profile_filepath = "profile"
+  .profile = "default",
+  .exit = false,
+  .output = false
 };
 
 void configure(int argc, char **argv) {
   int opt;
   char *end;
 
-  while ((opt = getopt(argc, argv, "t:w:r")) != -1) {
+  while ((opt = getopt(argc, argv, "t:w:p:oh")) != -1) {
     switch (opt) {
     case 't':
       config.time = strtol(optarg, &end, 10);
@@ -40,9 +43,16 @@ void configure(int argc, char **argv) {
         exit(EXIT_FAILURE);
       }
       break;
+    case 'p':
+      config.profile = optarg;
+      break;
+    case 'o':
+      config.output = true;
+      config.exit = true;
+      break;
     default:
       print_usage();
-      exit(EXIT_FAILURE);
+      config.exit = true;
     }
   }
 
@@ -56,7 +66,19 @@ void configure(int argc, char **argv) {
 }
 
 
-void print_usage () {
-  fprintf(stderr, "Usage: [-twr] [preset]\n");
+void print_usage(void) {
+    fprintf(stderr,
+        "Usage: program [options] [dictionary]\n"
+        "\n"
+        "Options:\n"
+        "  -t  Run time in seconds (0 = no timer, default: 0)\n"
+        "  -w  Number of words (default: 30)\n"
+        "  -r  Profile name (CSV file for typing runs, default: default)\n"
+        "  -o  Write profile data to standard output\n"
+        "  -h  Show this help message\n"
+        "\n"
+        "Arguments:\n"
+        "  dictionary  Path to dictionary file\n"
+    );
 }
 

@@ -124,7 +124,7 @@ void* timer(void *arg) {
     term_update_status_line(sl);
     wpm = ((double)pos / 5) / ((double)time_passed / 60);
 
-    if (config.time != 0 && time_passed > config.time) {
+    if (config.time != 0 && time_passed >= config.time) {
       kill(getpid(), SIGINT);
     }
   }

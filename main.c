@@ -8,6 +8,7 @@
 #include "args.h"
 #include "term.h"
 #include "typetest.h"
+#include "dataset.h"
 
 FILE *f;
 
@@ -22,6 +23,14 @@ int main(int argc, char **argv) {
   signal(SIGKILL, handle_signal);
 
   configure(argc, argv);
+
+  if (config.output) {
+    dataset_output();
+  }
+
+  if (config.exit) {
+    return 0;
+  }
 
   f = fopen(config.dictionary_filepath, "r");
   if (!f) {
